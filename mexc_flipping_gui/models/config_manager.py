@@ -18,15 +18,6 @@ class ConfigManager:
         "volume_multiplier": 1.5,
         "check_interval": 60,
         "risk_per_trade": 5.0,
-        "enable_trend_filter": False,
-        "enable_volume_filter": True,
-        "enable_rsi_filter": False,
-        "rsi_long_level": 35.0,
-        "rsi_short_level": 65.0,
-        "enable_min_profit_filter": False,
-        "min_profit_percent": 0.8,
-        "enable_cooldown": False,
-        "cooldown_seconds": 60,
     }
 
     def __init__(self, db_connection: sqlite3.Connection) -> None:
