@@ -8,9 +8,9 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
-from config_system import ApiConfigStore
 from .base_tab import BaseTab
 
 
@@ -48,7 +48,6 @@ class ApiTab(BaseTab):
         self.encrypted_settings = encrypted_settings
         self.fernet = fernet
         self.logger = logger
-        self.config_store = ApiConfigStore("config.json")
         self.check_worker: ConnectionCheckWorker | None = None
 
         self.api_key_input = QLineEdit()
@@ -81,10 +80,7 @@ class ApiTab(BaseTab):
         self.save_button.clicked.connect(self.save_keys)
 
     def _load_masked_keys(self) -> None:
-        api_key, api_secret = self.config_store.load_keys()
-        if not api_key or not api_secret:
-            api_key, api_secret = self.encrypted_settings.get_api_keys()
-
+        api_key, api_secret = self.encrypted_settings.get_api_keys()
         if api_key:
             self.api_key_input.setPlaceholderText("*" * min(12, len(api_key)))
         if api_secret:
@@ -99,25 +95,17 @@ class ApiTab(BaseTab):
 
         self.check_button.setEnabled(False)
         self.check_worker = ConnectionCheckWorker(api_key, api_secret)
-        self.check_worker.finished_check.connect(lambda ok, msg: self._on_check_finished(ok, msg, api_key, api_secret))
+        self.check_worker.finished_check.connect(self._on_check_finished)
         self.check_worker.start()
 
-    def _on_check_finished(self, success: bool, message: str, api_key: str, api_secret: str) -> None:
+    def _on_check_finished(self, success: bool, message: str) -> None:
         self.check_button.setEnabled(True)
         self._set_result(success, message)
-        if success:
-            self._persist_keys(api_key, api_secret)
 
     def _set_result(self, success: bool, message: str) -> None:
         color = "green" if success else "red"
         self.result_label.setStyleSheet(f"color: {color};")
         self.result_label.setText(message)
-
-    def _persist_keys(self, api_key: str, api_secret: str) -> None:
-        self.encrypted_settings.set_api_keys(api_key, api_secret)
-        self.config_store.save_keys(api_key, api_secret)
-        self.logger.info("API keys saved persistently")
-        self.keys_saved.emit()
 
     def save_keys(self) -> None:
         api_key = self.api_key_input.text().strip()
@@ -126,8 +114,10 @@ class ApiTab(BaseTab):
             self._set_result(False, "Нельзя сохранить пустые ключи")
             return
         try:
-            self._persist_keys(api_key, api_secret)
-            self._set_result(True, "Ключи сохранены")
+            self.encrypted_settings.set_api_keys(api_key, api_secret)
+            self.logger.info("API keys saved from UI")
+            self._set_result(True, "Ключи сохранены. Перезапустите приложение для активации трейдера.")
+            self.keys_saved.emit()
         except Exception as exc:
             self.logger.error("Failed to save API keys: %s", exc)
             self._set_result(False, f"Ошибка сохранения: {exc}")

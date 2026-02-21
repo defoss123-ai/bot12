@@ -11,15 +11,13 @@ class TradingWorker(QThread):
     update_log = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, trader, strategy, pair_manager, config_manager, logger, api_key: str | None = None, api_secret: str | None = None):
+    def __init__(self, trader, strategy, pair_manager, config_manager, logger):
         super().__init__()
         self.trader = trader
         self.strategy = strategy
         self.pair_manager = pair_manager
         self.config_manager = config_manager
         self.logger = logger
-        self.api_key = api_key
-        self.api_secret = api_secret
         self.running = False
         self._cooldown_until: dict[str, float] = {}
         self._last_position_state: dict[str, bool] = {}
@@ -39,12 +37,6 @@ class TradingWorker(QThread):
         self.update_status.emit("Trading stopped")
 
     def run(self) -> None:
-        if not self.api_key or not self.api_secret:
-            self.logger.error("API keys missing")
-            self.update_status.emit("API keys missing")
-            return
-
-        self.logger.info("API keys loaded successfully")
         self.start_trading()
         while self.running:
             try:

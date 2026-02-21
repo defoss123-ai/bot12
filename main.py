@@ -5,14 +5,14 @@ import sys
 
 from PyQt5.QtWidgets import QApplication
 
-from config_system import ApiConfigStore
-from gui import MainWindow
 from mexc_flipping_gui.models.config_manager import ConfigManager
 from mexc_flipping_gui.models.database import init_db
 from mexc_flipping_gui.models.encryption import EncryptedSettings, get_or_create_fernet_key
 from mexc_flipping_gui.models.pair_manager import PairManager
+from mexc_flipping_gui.models.signal_generator import SignalGenerator
 from mexc_flipping_gui.models.trader import Trader
-from strategy import FlippingStrategy
+from mexc_flipping_gui.views.main_window import MainWindow
+from mexc_flipping_gui.views.workers import TradingWorker
 
 
 def setup_logging() -> logging.Logger:
@@ -59,28 +59,23 @@ def main() -> int:
     config_manager = ConfigManager(db_connection)
     pair_manager = PairManager(db_connection, logger)
 
-    config_store = ApiConfigStore("config.json")
-    api_key, api_secret = config_store.load_keys()
-
-    if not api_key or not api_secret:
-        api_key, api_secret = encrypted_settings.get_api_keys()
-        if api_key and api_secret:
-            config_store.save_keys(api_key, api_secret)
-            logger.info("API keys loaded successfully")
-        else:
-            logger.error("API keys missing")
+    api_key, api_secret = encrypted_settings.get_api_keys()
 
     trader = None
-    strategy = None
+    signal_generator = None
+    worker = None
 
     if api_key and api_secret:
         try:
             exchange = create_exchange(api_key, api_secret)
             trader = Trader(exchange, pair_manager, db_connection, config_manager, logger)
-            strategy = FlippingStrategy(exchange, config_manager, logger)
-            logger.info("Trader initialized. Waiting for Start Trading button.")
+            signal_generator = SignalGenerator(exchange, config_manager, logger)
+            worker = TradingWorker(trader, signal_generator, pair_manager, config_manager, logger)
+            logger.info("Trader and worker initialized")
         except Exception as exc:
             logger.error("Failed to initialize exchange/trader: %s", exc)
+    else:
+        logger.warning("API keys not configured. Add keys in API tab and restart application.")
 
     app = QApplication(sys.argv)
     window = MainWindow(
@@ -91,13 +86,18 @@ def main() -> int:
         logger=logger,
         encrypted_settings=encrypted_settings,
         trader=trader,
-        strategy=strategy,
-        api_key=api_key,
-        api_secret=api_secret,
     )
+    if worker:
+        window.set_worker(worker)
 
     window.show()
-    return app.exec()
+    exit_code = app.exec()
+
+    if worker and worker.isRunning():
+        worker.stop()
+        worker.wait(5000)
+
+    return exit_code
 
 
 if __name__ == "__main__":

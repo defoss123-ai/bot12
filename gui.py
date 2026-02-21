@@ -19,31 +19,16 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from config_system import ApiConfigStore
-from mexc_flipping_gui.models.trader import Trader
 from mexc_flipping_gui.views.api_tab import ApiTab
 from mexc_flipping_gui.views.logs_tab import LogsTab
 from mexc_flipping_gui.views.pairs_tab import PairsTab
 from mexc_flipping_gui.views.stats_tab import StatsTab
 from mexc_flipping_gui.views.strategy_tab import StrategyTab
-from strategy import FlippingStrategy
 from trading_worker import TradingWorker
 
 
 class MainWindow(QMainWindow):
-    def __init__(
-        self,
-        db_connection,
-        fernet,
-        pair_manager,
-        config_manager,
-        logger,
-        encrypted_settings,
-        trader=None,
-        strategy=None,
-        api_key: str | None = None,
-        api_secret: str | None = None,
-    ):
+    def __init__(self, db_connection, fernet, pair_manager, config_manager, logger, encrypted_settings, trader=None, strategy=None):
         super().__init__()
         self.db_connection = db_connection
         self.fernet = fernet
@@ -53,9 +38,6 @@ class MainWindow(QMainWindow):
         self.encrypted_settings = encrypted_settings
         self.trader = trader
         self.strategy = strategy
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.config_store = ApiConfigStore("config.json")
         self.worker: TradingWorker | None = None
 
         self.setWindowTitle("MEXC Flipping Bot")
@@ -63,7 +45,6 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.api_tab = ApiTab(self.encrypted_settings, self.fernet, self.logger)
-        self.api_tab.keys_saved.connect(self._reload_api_keys)
         self.pairs_tab = PairsTab(self.pair_manager, self.logger)
         self.strategy_tab = StrategyTab(self.config_manager, self.logger)
         self.stats_tab = StatsTab(self.trader, self.pair_manager, self.logger)
@@ -110,45 +91,6 @@ class MainWindow(QMainWindow):
         self.clock_timer = QTimer(self)
         self.clock_timer.timeout.connect(self._update_clock)
         self.clock_timer.start(1000)
-
-    def _create_exchange(self, api_key: str, api_secret: str):
-        import ccxt
-
-        return ccxt.mexc(
-            {
-                "apiKey": api_key,
-                "secret": api_secret,
-                "enableRateLimit": True,
-                "options": {"defaultType": "swap", "unifiedAccount": True},
-            }
-        )
-
-    def _reload_api_keys(self) -> None:
-        self.api_key, self.api_secret = self.config_store.load_keys()
-        if self.api_key and self.api_secret:
-            self.logger.info("API keys loaded successfully")
-            self.update_status("API keys loaded successfully")
-            self.trader = None
-            self.strategy = None
-        else:
-            self.logger.error("API keys missing")
-
-    def _ensure_clients(self) -> bool:
-        if self.trader and self.strategy:
-            return True
-
-        if not self.api_key or not self.api_secret:
-            self.api_key, self.api_secret = self.config_store.load_keys()
-
-        if not self.api_key or not self.api_secret:
-            self.logger.error("API keys missing")
-            return False
-
-        exchange = self._create_exchange(self.api_key, self.api_secret)
-        self.trader = Trader(exchange, self.pair_manager, self.db_connection, self.config_manager, self.logger)
-        self.strategy = FlippingStrategy(exchange, self.config_manager, self.logger)
-        self.stats_tab.trader = self.trader
-        return True
 
     def _build_filters_group(self) -> QGroupBox:
         group = QGroupBox("Flipping Strategy Filters")
@@ -227,8 +169,8 @@ class MainWindow(QMainWindow):
         worker.finished.connect(self._on_worker_finished)
 
     def start_trading(self) -> None:
-        if not self._ensure_clients():
-            self.update_status("API keys missing")
+        if not self.trader or not self.strategy:
+            self.update_status("Сначала сохраните API ключи и перезапустите приложение")
             return
 
         if self.worker and self.worker.isRunning() and self.worker.running:
@@ -241,8 +183,6 @@ class MainWindow(QMainWindow):
                 pair_manager=self.pair_manager,
                 config_manager=self.config_manager,
                 logger=self.logger,
-                api_key=self.api_key,
-                api_secret=self.api_secret,
             )
             self._connect_worker_signals(self.worker)
 
