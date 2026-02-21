@@ -20,9 +20,25 @@ class Trader:
         self.position_cache: dict[str, dict[str, Any]] = {}
 
     def set_leverage(self, symbol: str, leverage: int) -> None:
+        """
+        Set leverage for a symbol on MEXC futures.
+        MEXC may require setting leverage per position side with:
+        - openType: 1 (isolated), 2 (cross)
+        - positionType: 1 (long), 2 (short)
+        """
         try:
-            self.exchange.set_leverage(int(leverage), symbol)
-            self.logger.info("Set leverage %sx for %s", leverage, symbol)
+            leverage = int(leverage)
+            self.exchange.set_leverage(
+                leverage,
+                symbol,
+                params={"openType": 1, "positionType": 1},
+            )
+            self.exchange.set_leverage(
+                leverage,
+                symbol,
+                params={"openType": 1, "positionType": 2},
+            )
+            self.logger.info("Leverage set to %sx for %s", leverage, symbol)
         except Exception as exc:
             self.logger.error("Failed to set leverage for %s: %s", symbol, exc)
             raise
